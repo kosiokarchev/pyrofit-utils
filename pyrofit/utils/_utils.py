@@ -1,4 +1,5 @@
 import typing
+from warnings import warn
 
 import pyro.distributions
 import torch
@@ -12,6 +13,7 @@ try:
         def __getstate__(self):
             return {}
 except ImportError:
+    warn('torchinterp1d not found', category=ImportWarning)
     pass
 
 
