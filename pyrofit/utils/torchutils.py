@@ -1,17 +1,31 @@
+import io
 import itertools
+import typing
 
 import torch
+from more_itertools import last
+
+
+def map_location(obj, location=None):
+    """Brute-force remap locations by round-trip serialisation."""
+    buf = io.BytesIO()
+    torch.save(obj, buf)
+    buf.seek(0)
+    return torch.load(buf, map_location=location)
 
 
 def broadcast_except(*tensors: torch.Tensor, dim=-1):
     shape = torch.broadcast_tensors(*[t.select(dim, 0) for t in tensors])[0].shape
-    return [t.expand(*shape[:t.ndim+dim+1], t.shape[dim], *shape[t.ndim+dim+1:]) for t in tensors]
+    return [t.expand(*shape[:dim+1], t.shape[dim], *shape[dim+1:]) for t in tensors]
 
 
-def pad_dims(*tensors: torch.Tensor, ndim: int = None):
+# TODO: improve so that nbatch=-1 means "auto-derive nbatch from number of
+#  matching dimensions on the left"
+def pad_dims(*tensors: torch.Tensor, ndim: int = None, nbatch: int = 0) -> typing.List[torch.Tensor]:
+    """Pad shapes with ones on the left until at least `ndim` dimensions."""
     if ndim is None:
         ndim = max([t.ndim for t in tensors])
-    return [t.reshape((1,)*(ndim-t.ndim) + t.shape) for t in tensors]
+    return [t.reshape(t.shape[:nbatch] + (1,)*(ndim-t.ndim) + t.shape[nbatch:]) for t in tensors]
 
 
 def num_to_tensor(*args, device=None):
@@ -39,6 +53,29 @@ def onehotnd(p: torch.tensor, ranges: torch.Size):
                                accumulate=True)
 
     return onehot
+
+
+def _diff_one(a: torch.Tensor, axis: int):
+    return torch.narrow(a, axis, 1, a.shape[axis]-1) - torch.narrow(a, axis, 0, a.shape[axis]-1)
+
+
+def _mid_many(a: torch.Tensor, axes: typing.Iterable[int]) -> torch.Tensor:
+    axes = [ax % a.ndim for ax in axes]
+    return last(
+        _a for _a in [a] for ax in axes
+        for _a in [torch.narrow(_a, ax, 0, _a.shape[ax]-1) + torch.narrow(_a, ax, 1, _a.shape[ax]-1)]
+    ) / 2**len(axes) if axes else a
+
+
+def gradient(a: torch.Tensor, axis: typing.Union[int, typing.Iterable[int]]):
+    return (_diff_one(a, axis) if isinstance(axis, int) else
+            [_mid_many(_diff_one(a, i), set(axis) - {i}) for i in axis])
+
+
+def unravel_index(indices: torch.LongTensor, shape: torch.Size) -> torch.LongTensor:
+    strides = torch.tensor([p for p in [1] for s in shape[:0:-1] for p in [s*p]][::-1] + [1]).to(indices, )
+    shape = torch.tensor(list(shape)).to(indices)
+    return (indices.unsqueeze(-1) // strides) % shape
 
 
 class ConvNDFFT:

@@ -1,8 +1,11 @@
+import typing
 from math import pi
 from warnings import warn
 
 import torch
-import typing
+
+from .torchutils import pad_dims
+
 
 try:
     from pykeops.torch import LazyTensor
@@ -96,6 +99,7 @@ def kNN(x: torch.Tensor, y: torch.Tensor, k: int) -> torch.Tensor:
     idx[..., i][0] == i, i.e. if the two sets of points are the same, the
     nearest neighbour to each point is the point itself.
     """
+    x, y = pad_dims(x, y)
     return LazyTensor.sqdist(
         LazyTensor(x.unsqueeze(-2)),
         LazyTensor(y.unsqueeze(-3))
