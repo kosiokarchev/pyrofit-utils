@@ -4,7 +4,7 @@ from warnings import warn
 
 import torch
 
-from .torchutils import pad_dims
+from .torchutils import broadcast_gather, pad_dims
 
 
 try:
@@ -106,31 +106,6 @@ def kNN(x: torch.Tensor, y: torch.Tensor, k: int) -> torch.Tensor:
     ).argKmin(k, dim=len(x.shape) - 1)  # reduce along x dimension
 
 
-def broadcast_index(x, i):
-    """
-    Return x[i], but take into account batch and vector dimensions. Used in
-    conjunction with kNN.
-
-    Parameters
-    ----------
-    x: torch.Tensor: Size(batch_dims..., N, ndim)
-    i: torch.Tensor: Size(batch_dims..., M, k)
-
-    Returns
-    -------
-        torch.Tensor: Size(batch_dims..., k, ndim)
-    Returns xi such that xi[a, b..., m, n] = x[a, b..., i[a, b..., m, n]], where
-    a, b... are indices into the batch dimensions.
-    """
-    # Get the nearest neighbours by exploiting broadcasting of arange() to
-    # index correctly into the batch dimensions. Trust me: it works.
-    i = i.expand(*x.shape[:-2], *i.shape[-2:])
-    return x.__getitem__([
-        torch.arange(i.shape[j]).reshape(tuple(sh))
-        for j, sh in enumerate(torch.full([len(x.shape) - 2, len(i.shape)], 1, dtype=torch.int).fill_diagonal_(-1))
-    ] + [i])
-
-
 def kNN_d2(x: torch.Tensor, y: torch.Tensor, k: int,
            x0: torch.Tensor = None, y0: torch.Tensor = None) -> torch.Tensor:
     """
@@ -157,4 +132,4 @@ def kNN_d2(x: torch.Tensor, y: torch.Tensor, k: int,
         x0 = x
         y0 = y
 
-    return (x.unsqueeze(-2) - broadcast_index(y, kNN(x0, y0, k))).pow(2.).sum(-1)
+    return (x.unsqueeze(-2) - broadcast_gather(y, -2, kNN(x0, y0, k), index_ndim=2)).pow(2.).sum(-1)

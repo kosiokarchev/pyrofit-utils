@@ -33,6 +33,23 @@ def broadcast_left(*tensors, ndim):
     return (t.expand(*shape, *t.shape[ndim:]) for t in tensors)
 
 
+def broadcast_gather(input, dim, index, sparse_grad=False, index_ndim=1):
+    """
+    input: Size(batch_shape..., N, event_shape...)
+    index: Size(batch_shape..., M)
+        -> Size(batch_shape..., M, event_shape...)
+    """
+    index_shape = index.shape[-index_ndim:]
+    index = index.flatten(-index_ndim)
+    batch_shape = broadcast_shapes(input.shape[:dim], index.shape[:-1])
+    input = input.expand(*batch_shape, *input.shape[dim:])
+    index = index.expand(*batch_shape, index.shape[-1])
+    return torch.gather(input, dim, index.reshape(
+        *index.shape, *(input.ndim - index.ndim)*(1,)).expand(
+        *index.shape, *input.shape[index.ndim:]
+    ) if input.ndim > index.ndim else index, sparse_grad=sparse_grad).reshape(*index.shape[:-1], *index_shape)
+
+
 # TODO: improve so that nbatch=-1 means "auto-derive nbatch from number of
 #  matching dimensions on the left"
 def pad_dims(*tensors: torch.Tensor, ndim: int = None, nbatch: int = 0) -> typing.List[torch.Tensor]:
