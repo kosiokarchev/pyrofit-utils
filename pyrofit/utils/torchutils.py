@@ -3,6 +3,7 @@ import itertools
 import typing
 
 import torch
+import torch.nn.functional
 from more_itertools import last
 
 
@@ -16,7 +17,20 @@ def map_location(obj, location=None):
 
 def broadcast_except(*tensors: torch.Tensor, dim=-1):
     shape = torch.broadcast_tensors(*[t.select(dim, 0) for t in tensors])[0].shape
-    return [t.expand(*shape[:t.ndim + dim + 1], t.shape[dim], *shape[t.ndim + dim + 1:]) for t in tensors]
+    return [t.expand(*shape[:t.ndim + dim + 1], t.shape[dim], *shape[t.ndim + dim + 1:])
+            for t in pad_dims(*tensors, ndim=len(shape)+1)]
+
+
+# TODO: torch 1.8
+def broadcast_shapes(*shapes):
+    with torch.no_grad():
+        scalar = torch.zeros((), device="cpu")
+        return torch.broadcast_tensors(*(scalar.expand(shape) for shape in shapes))[0].shape
+
+
+def broadcast_left(*tensors, ndim):
+    shape = broadcast_shapes(*(t.shape[:ndim] for t in tensors))
+    return (t.expand(*shape, *t.shape[ndim:]) for t in tensors)
 
 
 # TODO: improve so that nbatch=-1 means "auto-derive nbatch from number of
@@ -29,7 +43,7 @@ def pad_dims(*tensors: torch.Tensor, ndim: int = None, nbatch: int = 0) -> typin
 
 
 def num_to_tensor(*args, device=None):
-    return [torch.as_tensor(a, dtype=torch.get_default_dtype(), device=device)
+    return [torch.as_tensor(a, dtype=torch.get_default_dtype(), device=device) if not torch.is_tensor(a) else a.to(dtype=torch.get_default_dtype(), device=device)
             for a in args]
     # return [a.to(device) if torch.is_tensor(a) else torch.tensor(a, device=device) for a in args]
 
@@ -73,7 +87,7 @@ def gradient(a: torch.Tensor, axis: typing.Union[int, typing.Iterable[int]]):
 
 
 def unravel_index(indices: torch.LongTensor, shape: torch.Size) -> torch.LongTensor:
-    strides = torch.tensor([p for p in [1] for s in shape[:0:-1] for p in [s*p]][::-1] + [1]).to(indices, )
+    strides = torch.tensor([p for p in [1] for s in shape[:0:-1] for p in [s*p]][::-1] + [1]).to(indices)
     shape = torch.tensor(list(shape)).to(indices)
     return (indices.unsqueeze(-1) // strides) % shape
 
