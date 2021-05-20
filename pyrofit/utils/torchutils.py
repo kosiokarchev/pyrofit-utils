@@ -47,7 +47,7 @@ def broadcast_gather(input, dim, index, sparse_grad=False, index_ndim=1):
     return torch.gather(input, dim, index.reshape(
         *index.shape, *(input.ndim - index.ndim)*(1,)).expand(
         *index.shape, *input.shape[index.ndim:]
-    ) if input.ndim > index.ndim else index, sparse_grad=sparse_grad).reshape(*index.shape[:-1], *index_shape)
+    ) if input.ndim > index.ndim else index, sparse_grad=sparse_grad).reshape(*index.shape[:-1], *index_shape, *input.shape[dim % len(input.shape) + 1:])
 
 
 # TODO: improve so that nbatch=-1 means "auto-derive nbatch from number of
