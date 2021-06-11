@@ -12,6 +12,12 @@ try:
     class Interp1d(_Interp1d):
         def __getstate__(self):
             return {}
+
+        def __call__(self, x, y, xnew, out=None):
+            return super().__call__(*(_.view(-1, _.shape[-1]) for _ in (x, y, xnew)), out=out).view(xnew.shape)
+
+    interp1d = Interp1d()
+
 except ImportError:
     warn('torchinterp1d not found', category=ImportWarning)
     pass
@@ -22,6 +28,7 @@ _Distribution = typing.Union[
     pyro.distributions.TorchDistribution,
     pyro.distributions.torch_distribution.TorchDistributionMixin,
 ]
+_Tensor_like = typing.Union[torch.Tensor, float]
 
 
 def unwrap_distribution(dist):

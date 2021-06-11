@@ -1,15 +1,18 @@
-import io
-import itertools
-import typing
+from __future__ import annotations
+
+from io import BytesIO
+from itertools import chain, product
+from typing import Iterable, Union
 
 import torch
 import torch.nn.functional
-from more_itertools import last
+from more_itertools import last, split_into
+from packaging import version
 
 
 def map_location(obj, location=None):
     """Brute-force remap locations by round-trip serialisation."""
-    buf = io.BytesIO()
+    buf = BytesIO()
     torch.save(obj, buf)
     buf.seek(0)
     return torch.load(buf, map_location=location)
@@ -21,11 +24,13 @@ def broadcast_except(*tensors: torch.Tensor, dim=-1):
             for t in pad_dims(*tensors, ndim=len(shape)+1)]
 
 
-# TODO: torch 1.8
-def broadcast_shapes(*shapes):
-    with torch.no_grad():
-        scalar = torch.zeros((), device="cpu")
-        return torch.broadcast_tensors(*(scalar.expand(shape) for shape in shapes))[0].shape
+if version.parse(torch.__version__) < version.parse('1.8'):
+    def broadcast_shapes(*shapes):
+        with torch.no_grad():
+            scalar = torch.zeros((), device="cpu")
+            return torch.broadcast_tensors(*(scalar.expand(shape) for shape in shapes))[0].shape
+else:
+    broadcast_shapes = torch.broadcast_shapes
 
 
 def broadcast_left(*tensors, ndim):
@@ -52,11 +57,23 @@ def broadcast_gather(input, dim, index, sparse_grad=False, index_ndim=1):
 
 # TODO: improve so that nbatch=-1 means "auto-derive nbatch from number of
 #  matching dimensions on the left"
-def pad_dims(*tensors: torch.Tensor, ndim: int = None, nbatch: int = 0) -> typing.List[torch.Tensor]:
+def pad_dims(*tensors: torch.Tensor, ndim: int = None, nbatch: int = 0) -> list[torch.Tensor]:
     """Pad shapes with ones on the left until at least `ndim` dimensions."""
     if ndim is None:
         ndim = max([t.ndim for t in tensors])
     return [t.reshape(t.shape[:nbatch] + (1,)*(ndim-t.ndim) + t.shape[nbatch:]) for t in tensors]
+
+
+def align_dims(t: torch.Tensor, ndims: Iterable[int], target_ndims: Iterable[int]):
+    assert sum(ndims) == t.ndim
+    return t.reshape(*chain.from_iterable(
+        (target_ndim - len(s)) * [1] + s for s, target_ndim
+        in zip(split_into(t.shape, ndims), target_ndims)
+    ))
+
+
+def aligned_expand(t: torch.Tensor, ndims: Iterable[int], shapes: Iterable[torch.Size]):
+    return align_dims(t, ndims, map(len, shapes)).expand(*chain.from_iterable(shapes))
 
 
 def num_to_tensor(*args, device=None):
@@ -73,7 +90,7 @@ def onehotnd(p: torch.tensor, ranges: torch.Size):
     p_flat = p.reshape((-1,) + p.shape[-2:])
     index = p_flat.long()
 
-    offsets = torch.tensor(list(itertools.product(*([[0, 1]] * ndim))),
+    offsets = torch.tensor(list(product(*([[0, 1]] * ndim))),
                            device=p.device)
 
     for offset in offsets:
@@ -90,7 +107,7 @@ def _diff_one(a: torch.Tensor, axis: int):
     return torch.narrow(a, axis, 1, a.shape[axis]-1) - torch.narrow(a, axis, 0, a.shape[axis]-1)
 
 
-def _mid_many(a: torch.Tensor, axes: typing.Iterable[int]) -> torch.Tensor:
+def _mid_many(a: torch.Tensor, axes: Iterable[int]) -> torch.Tensor:
     axes = [ax % a.ndim for ax in axes]
     return last(
         _a for _a in [a] for ax in axes
@@ -98,7 +115,7 @@ def _mid_many(a: torch.Tensor, axes: typing.Iterable[int]) -> torch.Tensor:
     ) / 2**len(axes) if axes else a
 
 
-def gradient(a: torch.Tensor, axis: typing.Union[int, typing.Iterable[int]]):
+def gradient(a: torch.Tensor, axis: Union[int, Iterable[int]]):
     return (_diff_one(a, axis) if isinstance(axis, int) else
             [_mid_many(_diff_one(a, i), set(axis) - {i}) for i in axis])
 
