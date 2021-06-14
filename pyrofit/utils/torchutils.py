@@ -131,17 +131,17 @@ class ConvNDFFT:
         self.ndim = ndim
         self.kernel = kernel.roll((torch.tensor(kernel.shape[-ndim:]) // 2).tolist(),
                                   list(range(-ndim, 0)))
-        self.kernel_fft = torch.rfft(self.kernel, self.ndim, onesided=False)
+        self.kernel_fft = torch.fft.fft(self.kernel, self.ndim)
 
     def __call__(self, signal, sumdims=None):
         torch.cuda.empty_cache()
-        signal_fft = torch.rfft(signal, self.ndim, onesided=False)
+        signal_fft = torch.fft.fft(signal, self.ndim)
         res = torch.empty_like(torch.broadcast_tensors(signal_fft, self.kernel_fft)[0])
         res[..., 0] = (signal_fft[..., 0] * self.kernel_fft[..., 0]
                        - signal_fft[..., 1] * self.kernel_fft[..., 1])
         res[..., 1] = (signal_fft[..., 0] * self.kernel_fft[..., 1]
                        + signal_fft[..., 1] * self.kernel_fft[..., 0])
-        res = torch.irfft(res, self.ndim, onesided=False)
+        res = torch.fft.ifft(res, self.ndim).real
 
         return res if sumdims is None else res.sum(sumdims)
 

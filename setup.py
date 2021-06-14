@@ -7,7 +7,7 @@ setup(
     packages=['pyrofit.utils'],
     install_requires=[
         'packaging',
-        'torch',
+        'torch>=1.8',
         'pykeops',
         'pyro-ppl'
     ],

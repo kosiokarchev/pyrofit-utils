@@ -14,7 +14,7 @@ try:
             return {}
 
         def __call__(self, x, y, xnew, out=None):
-            return super().__call__(*(_.view(-1, _.shape[-1]) for _ in (x, y, xnew)), out=out).view(xnew.shape)
+            return super().__call__(*((_.view(-1, _.shape[-1]) if _.numel() else _) for _ in (x, y, xnew)), out=out).view(xnew.shape)
 
     interp1d = Interp1d()
 
