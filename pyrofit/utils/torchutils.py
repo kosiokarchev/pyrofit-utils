@@ -127,21 +127,23 @@ def unravel_index(indices: torch.LongTensor, shape: torch.Size) -> torch.LongTen
 
 
 class ConvNDFFT:
-    def __init__(self, kernel: torch.tensor, ndim: int):
-        self.ndim = ndim
+    def __init__(self, kernel: torch.tensor, ndim: int, whiten=False):
+        self.dims = tuple(range(-ndim, 0))
+        if whiten:
+            kernel = kernel - kernel.mean(self.dims, keepdims=True)
+            kernel = kernel / kernel.std(self.dims, keepdims=True)
         self.kernel = kernel.roll((torch.tensor(kernel.shape[-ndim:]) // 2).tolist(),
                                   list(range(-ndim, 0)))
-        self.kernel_fft = torch.fft.fft(self.kernel, self.ndim)
+        self.kernel_fft = torch.fft.fftn(self.kernel, dim=self.dims)
 
     def __call__(self, signal, sumdims=None):
         torch.cuda.empty_cache()
-        signal_fft = torch.fft.fft(signal, self.ndim)
-        res = torch.empty_like(torch.broadcast_tensors(signal_fft, self.kernel_fft)[0])
-        res[..., 0] = (signal_fft[..., 0] * self.kernel_fft[..., 0]
-                       - signal_fft[..., 1] * self.kernel_fft[..., 1])
-        res[..., 1] = (signal_fft[..., 0] * self.kernel_fft[..., 1]
-                       + signal_fft[..., 1] * self.kernel_fft[..., 0])
-        res = torch.fft.ifft(res, self.ndim).real
+        signal_fft = torch.fft.fftn(signal, dim=self.dims)
+        res = torch.complex(
+            (signal_fft.real * self.kernel_fft.real - signal_fft.imag * self.kernel_fft.imag),
+            (signal_fft.real * self.kernel_fft.imag + signal_fft.imag * self.kernel_fft.real)
+        )
+        res = torch.fft.ifftn(res, dim=self.dims).real
 
         return res if sumdims is None else res.sum(sumdims)
 
