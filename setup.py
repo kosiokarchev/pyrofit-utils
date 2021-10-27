@@ -9,6 +9,7 @@ setup(
         'packaging',
         'torch>=1.8',
         'pykeops',
-        'pyro-ppl'
+        'pyro-ppl',
+        'torchinterp1d'
     ],
 )
